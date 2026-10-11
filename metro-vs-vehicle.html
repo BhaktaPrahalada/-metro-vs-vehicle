@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metro vs Vehicle: Hyderabad commute comparison</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--ink:#1f2937;--mute:#6b7280;--blue:#3b82f6;--blue-d:#2563eb;--green:#16a34a;--red:#f87171;--line:#e5e7eb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5;padding:24px 16px}
+main{max-width:28rem;margin:0 auto}
+h1{font-size:28px;margin:0 0 4px}
+h2{font-size:18px;margin:0 0 10px}
+.tag{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border-radius:11px;box-shadow:0 1px 4px rgba(0,0,0,.12);padding:22px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:0 0 4px}
+input,select{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;margin-bottom:14px}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.go{width:100%;padding:11px;background:var(--blue);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.go:hover{background:var(--blue-d)}
+.big{font-size:30px;font-weight:700;color:var(--green)}
+.row{margin:10px 0}
+.bar{height:26px;border-radius:6px;color:#fff;font-weight:600;padding:0 8px;display:flex;align-items:center;min-width:56px;cursor:help}
+.bar.v{background:var(--red)}.bar.m{background:var(--blue)}
+.row small{display:block;color:var(--mute);margin-bottom:3px}
+.crowd{display:flex;gap:6px;margin:8px 0 12px}
+.crowd button{flex:1;padding:8px 4px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:var(--mute);font:inherit;cursor:pointer}
+.crowd button[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:#fff}
+ul{padding-left:18px;margin:0}li{margin-bottom:6px}
+.foot{font-size:12px;color:var(--mute)}
+.empty{text-align:center;color:var(--mute)}
+[hidden]{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>Metro vs Vehicle</h1>
+<p class="tag">See what one trip across Hyderabad costs you, and the city, by metro or by your own vehicle.</p>
+
+<section class="card">
+  <label for="d">Trip distance (km)</label>
+  <input id="d" type="number" min="0" step="0.5" value="10" inputmode="decimal">
+  <label for="v">Your vehicle</label>
+  <select id="v">
+    <option value="bike">Two-wheeler (bike/scooter)</option>
+    <option value="car_petrol" selected>Car (petrol)</option>
+    <option value="car_diesel">Car (diesel)</option>
+    <option value="auto">Auto-rickshaw</option>
+  </select>
+  <button class="go" id="go">Compare</button>
+</section>
+
+<p class="empty" id="empty">Enter a distance above 0 and press Compare.</p>
+
+<div id="out" hidden>
+  <section class="card">
+    <h2>Emissions saved</h2>
+    <div class="big" id="co2"></div>
+    <p id="co2t"></p>
+  </section>
+
+  <section class="card">
+    <h2>Cost per trip</h2>
+    <div class="row"><small>Your vehicle</small><div class="bar v" id="bv" role="img"></div></div>
+    <div class="row"><small>Metro</small><div class="bar m" id="bm" role="img"></div></div>
+    <p><b>Saved per trip: <span class="big" style="font-size:20px" id="sv"></span></b></p>
+    <p id="svt"></p>
+  </section>
+
+  <section class="card">
+    <h2>Traffic and safety</h2>
+    <p id="traffic"></p>
+    <p>Fewer vehicles ease the jams at chokepoints like Ameerpet, Mehdipatnam and Punjagutta.</p>
+    <p>Fewer personal vehicles also means fewer conflict points on the road, which makes crossings safer and gives traffic police more room to manage flow.</p>
+  </section>
+
+  <section class="card">
+    <h2>How crowded is your metro?</h2>
+    <div class="crowd" id="crowd"></div>
+    <ul id="ctips"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Peak-hour tips</h2>
+    <ul id="ptips"></ul>
+  </section>
+</div>
+
+<p class="foot" id="assume" hidden></p>
+<p class="foot">Prototyped with AWS PartyRock for the Environmental Hacks hackathon (Air track). All figures are rough estimates, not measured data.</p>
+</main>
+
+<script>
+const EF={bike:35,car_petrol:120,car_diesel:140,auto:100},METRO=15;
+const LABEL={bike:"two-wheeler",car_petrol:"petrol car",car_diesel:"diesel car",auto:"auto-rickshaw"};
+const ECON={bike:40,car_petrol:14,car_diesel:18,auto:25};
+const PRICE={bike:107,car_petrol:107,car_diesel:97,auto:97};
+const PARK={bike:10,car_petrol:40,car_diesel:40,auto:0};
+const fare=d=>Math.min(Math.max(d*2.5,10),60);
+const PEAK=[
+"Avoid 8:30–10:30 AM and 6:00–8:00 PM on the Blue Line (Nagole–Raidurg), the busiest stretch.",
+"Ameerpet interchange is the most congested station. If your route allows, change lines at a quieter stop or use non-peak gates.",
+"Stand away from the first two doors of each coach, where crowding bunches up.",
+"Carry a smart card/NCMC card to skip the token queue.",
+"If your schedule is flexible, shifting 20–30 minutes outside peak windows cuts crowding noticeably."];
+const LEVELS=[["low","Not crowded"],["medium","Moderately crowded"],["high","Very crowded"]];
+const CT={
+low:["You're likely riding outside peak windows. Keep this timing if you can.","Any coach and entry point should be comfortable."],
+medium:["Shift your trip 15–20 minutes earlier or later; moderate crowding often clears outside the exact peak.","Use secondary entry points at Ameerpet, Miyapur or LB Nagar instead of the main interchange gates.","Board from the end coaches rather than the middle ones."],
+high:["If possible, avoid 8:30–10:30 AM and 6:00–8:00 PM entirely.","Try a station one stop away from hubs like Ameerpet, MG Bus Station or Hitec City.","Use the first or last coach and end-of-platform gates; crowding is heaviest near escalators and ticket counters.","If your trip is flexible, walk or take an auto to a quieter adjacent station."]};
+const $=id=>document.getElementById(id);
+let shown=false,level="medium";
+$("ptips").innerHTML=PEAK.map(t=>"<li>"+t+"</li>").join("");
+function drawCrowd(){
+  $("crowd").innerHTML=LEVELS.map(l=>`<button data-k="${l[0]}" aria-pressed="${l[0]===level}">${l[1]}</button>`).join("");
+  $("ctips").innerHTML=CT[level].map(t=>"<li>"+t+"</li>").join("");
+}
+$("crowd").addEventListener("click",e=>{const k=e.target.dataset.k;if(k){level=k;drawCrowd();}});
+function render(){
+  const d=parseFloat($("d").value)||0,v=$("v").value;
+  if(d<=0){$("out").hidden=true;$("assume").hidden=true;$("empty").hidden=false;return;}
+  $("empty").hidden=true;$("out").hidden=false;$("assume").hidden=false;
+  const ve=EF[v]*d/1000,me=METRO*d/1000,saved=Math.max(ve-me,0),pct=ve>0?Math.round(saved/ve*100):0;
+  $("co2").textContent=saved.toFixed(2)+" kg CO₂";
+  $("co2t").innerHTML=`Taking the metro instead of your ${LABEL[v]} for ${d} km saves about ${pct}% of the emissions. Five trips a week saves roughly <b>${(saved*5).toFixed(2)} kg CO₂</b>.`;
+  const fuel=d/ECON[v]*PRICE[v],vc=fuel+PARK[v],mf=fare(d),mx=Math.max(vc,mf)||1,sv=Math.max(vc-mf,0);
+  const bv=$("bv"),bm=$("bm");
+  bv.style.width=Math.max(vc/mx*100,20)+"%";bm.style.width=Math.max(mf/mx*100,20)+"%";
+  bv.textContent="₹"+vc.toFixed(0);bm.textContent="₹"+mf.toFixed(0);
+  const t1=PARK[v]>0?`Fuel ₹${fuel.toFixed(1)} + Parking ₹${PARK[v]} = ₹${vc.toFixed(1)}`:`Fuel ₹${fuel.toFixed(1)} = ₹${vc.toFixed(1)}`;
+  bv.title=t1;bv.setAttribute("aria-label",t1);
+  const t2=`Fare ₹${mf.toFixed(1)} for ${d} km`;bm.title=t2;bm.setAttribute("aria-label",t2);
+  $("sv").textContent="₹"+sv.toFixed(0);
+  $("svt").innerHTML=`Your ${LABEL[v]} costs roughly ₹${vc.toFixed(0)} per trip versus about ₹${mf.toFixed(0)} by metro. Five trips a week saves about <b>₹${(sv*5).toFixed(0)}</b>.`;
+  $("traffic").textContent=v==="bike"?"One fewer two-wheeler on the road for this trip.":v==="auto"?"One fewer auto-rickshaw trip adding to road congestion.":"One fewer car taking up road space. Cars use far more road area per person than bikes or autos.";
+  $("assume").textContent=`Assumptions: fuel about ₹107/L (petrol) and ₹97/L (diesel); ${ECON[v]} km/L for your vehicle type; parking ₹${PARK[v]} per trip where applicable; CO₂ factors in g/km: ${LABEL[v]} ${EF[v]}, metro ${METRO}; metro fare about ₹2.5/km (₹10 minimum, ₹60 maximum). Real costs vary by route, traffic and station.`;
+}
+$("go").onclick=()=>{shown=true;render();};
+$("d").oninput=$("v").onchange=()=>{if(shown)render();};
+drawCrowd();
+</script>
+</body>
+</html>
